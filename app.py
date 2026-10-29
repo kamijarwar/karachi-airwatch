@@ -1,3 +1,4 @@
+import urllib.parse
 import altair as alt
 import joblib
 import pandas as pd
@@ -23,6 +24,10 @@ CATEGORIES = [
         ],
         mask_en="No mask required.",
         mask_ur="Mask ki zaroorat nahi.",
+        window_en="Open windows for fresh air.",
+        window_ur="Taza hawa ke liye khidkiyan khol sakte hain.",
+        walk_en="Great day for outdoor walk/sports.",
+        walk_ur="Bahar walk aur khelne ke liye behtareen din hai.",
     ),
     dict(
         upper=100, name="Moderate", urdu="Darmiyana", color="#F2C500", text="black",
@@ -36,6 +41,10 @@ CATEGORIES = [
         ],
         mask_en="Mask not required (optional for sensitive groups).",
         mask_ur="Mask zaroori nahi. Hassas log chahein to pehn sakte hain.",
+        window_en="Windows can remain open during daytime.",
+        window_ur="Din mein khidkiyan khol sakte hain.",
+        walk_en="Normal walk is fine; avoid heavy marathon training.",
+        walk_ur="Aam walk theek hai, bohot bhari warzish se bachein.",
     ),
     dict(
         upper=150, name="Unhealthy for Sensitive Groups", urdu="Hassas logon ke liye kharab",
@@ -50,6 +59,10 @@ CATEGORIES = [
         ],
         mask_en="Wearing a mask outdoors is recommended for sensitive groups.",
         mask_ur="Bahar jaate waqt mask pehenna behtar hai.",
+        window_en="Keep windows closed during peak traffic hours.",
+        window_ur="Zyada traffic ke waqt khidkiyan band rakhein.",
+        walk_en="Limit outdoor jogging; prefer indoor exercise.",
+        walk_ur="Bahar daurne ke bajaye ghar ke andar warzish karein.",
     ),
     dict(
         upper=200, name="Unhealthy", urdu="Kharab", color="#D63B3B", text="white",
@@ -63,6 +76,10 @@ CATEGORIES = [
         ],
         mask_en="Wear an N95 / KN95 mask when going outside.",
         mask_ur="Bahar jana ho to achha mask (N95 / KN95) pehnein.",
+        window_en="Keep windows closed to block polluted air.",
+        window_ur="Kharab hawa se bachne ke liye khidkiyan band rakhein.",
+        walk_en="Avoid outdoor walks and sports completely.",
+        walk_ur="Bahar walk aur khelne se parhez karein.",
     ),
     dict(
         upper=300, name="Very Unhealthy", urdu="Bohat kharab", color="#7B3FA0", text="white",
@@ -76,6 +93,10 @@ CATEGORIES = [
         ],
         mask_en="N95 / KN95 mask is mandatory if going outside.",
         mask_ur="Bahar jana zaroori ho to N95 / KN95 mask pehnein.",
+        window_en="Strictly keep all windows and doors closed.",
+        window_ur="Ghar ki tamam khidkiyan band rakhein.",
+        walk_en="Strictly no outdoor physical activity.",
+        walk_ur="Bahar bilkul warzish ya walk na karein.",
     ),
     dict(
         upper=10_000, name="Hazardous", urdu="Khatarnak", color="#7E0023", text="white",
@@ -89,6 +110,10 @@ CATEGORIES = [
         ],
         mask_en="Strictly wear an N95 / KN95 respirator mask.",
         mask_ur="Bahar jana ho to N95 / KN95 mask zaroor pehnein.",
+        window_en="Seal windows; use an air purifier if available.",
+        window_ur="Khidkiyan mukammal band rakhein.",
+        walk_en="Stay indoors! Outdoor activity is dangerous.",
+        walk_ur="Ghar ke andar rahein! Bahar nikalna khatarnak hai.",
     ),
 ]
 
@@ -206,10 +231,23 @@ cat = get_category(pred)
 with st.sidebar:
     st.header("🎛️ 'What-If' AQI Simulator")
     st.caption("Test how the XGBoost model reacts to changing air quality! / Model ko khud test karein!")
-    sim_aqi = st.slider("Today's AQI (Aaj ka AQI)", 20.0, 300.0, float(round(today_aqi, 1)))
-    sim_lag1 = st.slider("Yesterday's AQI (Kal ka AQI)", 20.0, 300.0, float(round(latest["lag_1"].iloc[0], 1)))
-    sim_roll7 = st.slider("7-Day Rolling Avg (7 din ka avg)", 20.0, 300.0, float(round(latest["roll_7"].iloc[0], 1)))
-    sim_month = st.selectbox("Month (Mahina)", list(range(1, 13)), index=int(latest["month"].iloc[0]) - 1)
+
+    # ✨ NEW: Live Reset Button for Sliders
+    def_aqi = float(round(today_aqi, 1))
+    def_lag1 = float(round(latest["lag_1"].iloc[0], 1))
+    def_roll7 = float(round(latest["roll_7"].iloc[0], 1))
+    def_month = int(latest["month"].iloc[0])
+
+    if st.button("🔄 Reset to Live Karachi Data", use_container_width=True):
+        st.session_state["sim_aqi"] = def_aqi
+        st.session_state["sim_lag1"] = def_lag1
+        st.session_state["sim_roll7"] = def_roll7
+        st.session_state["sim_month"] = def_month
+
+    sim_aqi = st.slider("Today's AQI (Aaj ka AQI)", 20.0, 300.0, def_aqi, key="sim_aqi")
+    sim_lag1 = st.slider("Yesterday's AQI (Kal ka AQI)", 20.0, 300.0, def_lag1, key="sim_lag1")
+    sim_roll7 = st.slider("7-Day Rolling Avg (7 din ka avg)", 20.0, 300.0, def_roll7, key="sim_roll7")
+    sim_month = st.selectbox("Month (Mahina)", list(range(1, 13)), index=def_month - 1, key="sim_month")
 
     sim_input = pd.DataFrame([{
         "aqi": sim_aqi,
@@ -223,7 +261,7 @@ with st.sidebar:
     sim_pred = float(model.predict(sim_input)[0])
     sim_cat = get_category(sim_pred)
     st.markdown("---")
-    st.metric("Simulated Next-Day Forecast", f"{sim_pred:.1f} AQI", f"{sim_pred - sim_aqi:+.1f} vs Today")
+    st.metric("Simulated Next-Day Forecast", f"{sim_pred:.1f} AQI", f"{sim_pred - sim_aqi:+.1f} vs Today", delta_color="inverse")
     st.markdown(f"**Category:** `{sim_cat['name']} ({sim_cat['urdu']})`")
 
 # ----------------------------------------------------------------- Main Tabs
@@ -268,6 +306,19 @@ with tab1:
     c3.metric("PM2.5 (Fine)", f"{pm25:.0f} µg/m³")
     c4.metric("PM10 (Dust)", f"{pm10:.0f} µg/m³")
 
+    # ✨ NEW: 3-Column Quick Daily Precautions (Mask, Windows, Outdoor Walk)
+    st.subheader("Daily Action Plan / Aaj aur Kal ki Ehtiyat")
+    q1, q2, q3 = st.columns(3)
+    with q1.container(border=True):
+        st.markdown("**😷 Mask**")
+        st.caption(cat["mask_en"] if lang == "English Only" else (cat["mask_ur"] if lang == "Roman Urdu Only" else f"{cat['mask_en']}\n\n*{cat['mask_ur']}*"))
+    with q2.container(border=True):
+        st.markdown("**🪟 Windows / Khidkiyan**")
+        st.caption(cat["window_en"] if lang == "English Only" else (cat["window_ur"] if lang == "Roman Urdu Only" else f"{cat['window_en']}\n\n*{cat['window_ur']}*"))
+    with q3.container(border=True):
+        st.markdown("**🏃 Outdoor Walk**")
+        st.caption(cat["walk_en"] if lang == "English Only" else (cat["walk_ur"] if lang == "Roman Urdu Only" else f"{cat['walk_en']}\n\n*{cat['walk_ur']}*"))
+
     st.subheader("Health Advisory / Kis ke liye kya salah hai?")
     cols = st.columns(2)
     for i, (icon, who, advice) in enumerate(cat["groups"]):
@@ -281,22 +332,30 @@ with tab1:
             else:
                 st.write(f"• {en_adv}\n\n• *{ur_adv}*")
 
-    if lang == "English Only":
-        st.warning(f"😷 **Mask Advice:** {cat['mask_en']}")
-    elif lang == "Roman Urdu Only":
-        st.warning(f"😷 **Mask:** {cat['mask_ur']}")
-    else:
-        st.warning(f"😷 **Mask:** {cat['mask_en']} | *{cat['mask_ur']}*")
-
     st.subheader("Share Forecast / Dostoon ko bhejein")
     share = (
         f"🌫️ Karachi AirWatch Forecast ({pred_date.strftime('%d %b %Y')})\n"
         f"Predicted AQI: {pred:.0f} — {cat['name']} ({cat['urdu']})\n"
+        f"Today's AQI: {today_aqi:.0f} | PM2.5: {pm25:.0f} µg/m³\n"
         f"EN: {cat['headline_en']}\n"
         f"UR: {cat['headline_ur']}\n"
         f"😷 {cat['mask_en']}"
     )
     st.code(share, language=None)
+
+    # ✨ NEW: 1-Click Download Advisory & WhatsApp Share Buttons
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        st.download_button(
+            "📥 Download Forecast Report (.txt)",
+            data=share.encode("utf-8"),
+            file_name=f"karachi_aqi_forecast_{pred_date.strftime('%Y_%m_%d')}.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+    with btn_col2:
+        wa_url = f"https://wa.me/?text={urllib.parse.quote(share)}"
+        st.link_button("📲 Share on WhatsApp", wa_url, use_container_width=True)
 
 # ----------------------------------------------------------------- Tab 2
 with tab2:
@@ -356,6 +415,37 @@ with tab3:
             file_name="karachi_airwatch_backtest.csv",
             mime="text/csv",
         )
+
+    # ✨ NEW: Explainable AI (Feature Importance Chart) for Hackathon Judges
+    if hasattr(model, "feature_importances_"):
+        st.markdown("---")
+        st.subheader("🧠 Explainable AI: How the Model Decides / Model faisla kaise karta hai?")
+        feat_names = {
+            "aqi": "Today's AQI (Aaj ka AQI)",
+            "lag_1": "Yesterday's AQI (Kal ka AQI)",
+            "lag_2": "2 Days Ago (2 din pehle)",
+            "lag_7": "7 Days Ago (1 hafta pehle)",
+            "roll_3": "3-Day Avg (3 din ka avg)",
+            "roll_7": "7-Day Avg (7 din ka avg)",
+            "month": "Month / Season (Mahina)",
+        }
+        imp_df = pd.DataFrame({
+            "Feature": [feat_names.get(f, f) for f in FEATURES],
+            "Importance (%)": [float(x) * 100 for x in model.feature_importances_],
+        }).sort_values("Importance (%)", ascending=False)
+
+        imp_chart = (
+            alt.Chart(imp_df)
+            .mark_bar(cornerRadiusEnd=4, color="#F2C500")
+            .encode(
+                x=alt.X("Importance (%):Q", title="Importance (%) / Model mein ehmiyat"),
+                y=alt.Y("Feature:N", sort="-x", title=None),
+                tooltip=["Feature", alt.Tooltip("Importance (%):Q", format=".1f")],
+            )
+            .properties(height=230, width="container")
+        )
+        st.altair_chart(imp_chart)
+        st.caption("Shows which inputs carry the most weight inside the XGBoost Regressor. / Ye graph dikhata hai ke model prediction karte waqt kis cheez ko sab se zyada dekhta hai.")
 
 # ----------------------------------------------------------------- Tab 4
 with tab4:
